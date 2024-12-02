@@ -1,0 +1,79 @@
+---
+version: 2
+plan:
+  project-key: TEST
+  key: TEST1
+  name: Security Scans
+
+variables:
+  CLIENT_ID: '${bamboo.CLIENT_ID}'
+  CLIENT_SECRET: '${bamboo.CLIENT_SECRET}'
+  APPLICATION_ID: '67445a94043fa1dc91b0db4b'
+
+stages:
+  - Security Scans:
+      jobs:
+        - SAST Scan
+        - SCA Scan
+
+SAST Scan:
+  tasks:
+    - script:
+        - |
+          zip -r project.zip . -x "*.git*" "*/node_modules/*" "*/vendor/*" "*.zip"
+          RESPONSE=$(curl -X POST \
+            -H "Client-ID: $CLIENT_ID" \
+            -H "Client-Secret: $CLIENT_SECRET" \
+            -F "projectZipFile=@project.zip" \
+            -F "applicationId=$APPLICATION_ID" \
+            -F "scanName=SAST Scan - ${bamboo.buildNumber}" \
+            -F "language=javascript" \
+            https://appsecops-api.intruceptlabs.com/api/v1/integrations/sast-scans)
+          
+          CAN_PROCEED=$(echo $RESPONSE | jq -r '.canProceed')
+          VULNS_TABLE=$(echo $RESPONSE | jq -r '.vulnsTable')
+          echo "Vulnerabilities Table:"
+          echo "$VULNS_TABLE"
+          
+          if [ "$CAN_PROCEED" != "true" ]; then
+            echo "SAST scan failed. Please review the security issues."
+            exit 1
+          fi
+  final-tasks:
+    - script:
+        - echo "SAST Scan completed"
+
+SCA Scan:
+  tasks:
+    - script:
+        - |
+          zip -r project.zip . -x "*.git*" "*/node_modules/*" "*/vendor/*" "*.zip"
+          RESPONSE=$(curl -X POST \
+            -H "Client-ID: $CLIENT_ID" \
+            -H "Client-Secret: $CLIENT_SECRET" \
+            -F "projectZipFile=@project.zip" \
+            -F "applicationId=$APPLICATION_ID" \
+            -F "scanName=SCA Scan - ${bamboo.buildNumber}" \
+            -F "language=javascript" \
+            https://appsecops-api.intruceptlabs.com/api/v1/integrations/sca-scans)
+          
+          CAN_PROCEED=$(echo $RESPONSE | jq -r '.canProceed')
+          VULNS_TABLE=$(echo $RESPONSE | jq -r '.vulnsTable')
+          echo "Vulnerabilities Table:"
+          echo "$VULNS_TABLE"
+          
+          if [ "$CAN_PROCEED" != "true" ]; then
+            echo "SCA scan failed. Please review the dependency issues."
+            exit 1
+          fi
+  final-tasks:
+    - script:
+        - echo "SCA Scan completed"
+
+---
+version: 2
+deployment:
+  name: Security Scan Results
+  release-naming: { version-name: v${bamboo.buildNumber} }
+  environments:
+    - Development
